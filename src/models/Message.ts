@@ -1,8 +1,10 @@
 import { HTTPClient } from "koajax";
+import { BaseModel, toggle } from "mobx-restful";
 
-export class MessageModel {
+export class MessageModel extends BaseModel {
   client = new HTTPClient({ responseType: "json" });
 
+  @toggle("uploading")
   async sendCard(title: string, content: string) {
     const { body } = await this.client.post("", {
       msg_type: "interactive",

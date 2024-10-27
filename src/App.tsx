@@ -9,6 +9,7 @@ import {
   Typography,
 } from "@douyinfe/semi-ui";
 import { bitable } from "@lark-base-open/js-sdk";
+import { observer } from "mobx-react";
 import { useEffect, useRef, useState } from "react";
 import { sleep } from "web-utility";
 
@@ -16,12 +17,16 @@ import "./App.css";
 import fileStore, { SelectionType } from "./models/File";
 import messageStore from "./models/Message";
 
-export function App() {
+export const App = observer(() => {
   const [selectionInfo, setSectionInfo] = useState<SelectionType>();
   const [webHookUrl, setWebHookUrl] = useState<string>(localStorage.webHookUrl);
   const [baseToken, setBaseToken] = useState<string>(localStorage.baseToken);
   const [isBatch, setIsBatch] = useState(false);
   const formApi = useRef<BaseFormApi>();
+  const loading =
+    fileStore.downloading > 0 ||
+    fileStore.uploading > 0 ||
+    messageStore.uploading > 0;
 
   useEffect(() => {
     const offSelectionChange = bitable.base.onSelectionChange(({ data }) =>
@@ -50,18 +55,19 @@ export function App() {
     <main className="main">
       <div style={{ display: "flex", flexDirection: "column" }}>
         <Typography.Title heading={6} style={{ margin: 8 }}>
-          Bot webhook
+          Web hook URL of Lark chat bot
         </Typography.Title>
         <Input
-          placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
+          type="url"
           size="large"
+          placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
           onChange={setWebHookUrl}
         />
       </div>
 
       <div style={{ display: "flex", flexDirection: "column" }}>
         <Typography.Title heading={6} style={{ margin: 8 }}>
-          Lark Base Token
+          Web hook token of KaiYuanShe service
         </Typography.Title>
         <Input
           placeholder="Authorization"
@@ -103,6 +109,7 @@ export function App() {
 
             <Button
               disabled={
+                loading ||
                 !selectionInfo?.fieldId ||
                 !selectionInfo?.recordId ||
                 !baseToken
@@ -120,4 +127,4 @@ export function App() {
       </Tabs>
     </main>
   );
-}
+});

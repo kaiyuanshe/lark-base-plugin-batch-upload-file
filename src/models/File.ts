@@ -1,12 +1,13 @@
 import { bitable, FieldType, IField } from "@lark-base-open/js-sdk";
 import { HTTPClient } from "koajax";
+import { BaseModel, toggle } from "mobx-restful";
 
 export type SelectionType = Record<
   "baseId" | "fieldId" | "recordId" | "tableId" | "viewId",
   string
 >;
 
-export class FileModel {
+export class FileModel extends BaseModel {
   blobClient = new HTTPClient({
     baseURI: "https://ows.blob.core.chinacloudapi.cn/$web/file/",
     responseType: "blob",
@@ -19,6 +20,7 @@ export class FileModel {
 
   blobURLOf = (fileName = "") => this.blobClient.baseURI + fileName;
 
+  @toggle("downloading")
   async checkOne(path: string) {
     try {
       await this.blobClient.head(path);
@@ -28,6 +30,7 @@ export class FileModel {
     }
   }
 
+  @toggle("uploading")
   async uploadOne({ baseId, tableId, recordId }: SelectionType, token = "") {
     const { body } = await this.ownClient.post<{ files: string[] }>(
       `crawler/task/lark/base/${baseId}/${tableId}/${recordId}/file`,
