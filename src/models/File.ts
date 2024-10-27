@@ -1,3 +1,4 @@
+import { bitable, FieldType, IField } from "@lark-base-open/js-sdk";
 import { HTTPClient } from "koajax";
 
 export type SelectionType = Record<
@@ -34,6 +35,45 @@ export class FileModel {
       { Authorization: `Bearer ${token}` }
     );
     return body;
+  }
+
+  protected async fileNameOf(field: IField, recordId: string) {
+    const cell = await field.getCell(recordId);
+    const [{ name } = {}] = await cell.getValue();
+
+    return name;
+  }
+
+  async *findRawList({
+    tableId,
+    fieldId,
+    recordId,
+  }: Omit<SelectionType, "baseId">) {
+    const table = await bitable.base.getTable(tableId);
+    const field = await table.getField(fieldId);
+
+    const getFieldType = await field.getType();
+    // 检查是否是文件类型
+    if (getFieldType !== FieldType.Attachment)
+      throw new TypeError("Not A File");
+
+    if (recordId) {
+      yield await this.fileNameOf(field, recordId);
+      return;
+    }
+    for (const { id } of await table.getRecordList())
+      yield await this.fileNameOf(field, id);
+  }
+
+  async *uploadList(meta: SelectionType) {
+    for await (const fileName of this.findRawList(meta)) {
+      // 如果没有上传则上传
+      if (await this.checkOne(fileName)) continue;
+
+      const { files = [] } = (await this.uploadOne(meta)) || {};
+
+      yield* files;
+    }
   }
 }
 

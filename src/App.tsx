@@ -8,17 +8,18 @@ import {
   Tabs,
   Typography,
 } from "@douyinfe/semi-ui";
-import { bitable, FieldType, ToastType } from "@lark-base-open/js-sdk";
+import { bitable } from "@lark-base-open/js-sdk";
 import { useEffect, useRef, useState } from "react";
 import { sleep } from "web-utility";
 
 import "./App.css";
 import fileStore, { SelectionType } from "./models/File";
+import messageStore from "./models/Message";
 
-export default function App() {
+export function App() {
   const [selectionInfo, setSectionInfo] = useState<SelectionType>();
-  const [webHookUrl, setWebHookUrl] = useState<String>(localStorage.webHookUrl);
-  const [baseToken, setBaseToken] = useState<String>(localStorage.baseToken);
+  const [webHookUrl, setWebHookUrl] = useState<string>(localStorage.webHookUrl);
+  const [baseToken, setBaseToken] = useState<string>(localStorage.baseToken);
   const [isBatch, setIsBatch] = useState(false);
   const formApi = useRef<BaseFormApi>();
 
@@ -29,115 +30,17 @@ export default function App() {
     return offSelectionChange;
   });
 
-  const postBotMsg = async ({ imgURL }: Record<"imgURL", string>) => {
+  const batchCheckAndUpload = async (meta: SelectionType) => {
     if (!webHookUrl) return;
 
-    await fetch(webHookUrl as any as URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        msg_type: "interactive",
-        card: {
-          elements: [
-            {
-              tag: "div",
-              text: {
-                content: `**存储地址：** [${imgURL}](${imgURL})`,
-                tag: "lark_md",
-              },
-            },
-          ],
-          header: {
-            template: "green",
-            title: {
-              content: "✅失效图片重新上传成功",
-              tag: "plain_text",
-            },
-          },
-        },
-      }),
-    });
-  };
+    messageStore.client.baseURI = webHookUrl;
 
-  const checkAndUpload = async ({
-    baseId,
-    tableId,
-    recordId,
-    fieldId,
-    viewId,
-  }: SelectionType) => {
-    const table = await bitable.base.getTable(tableId);
-    const field = await table.getField(fieldId);
-
-    const getFieldType = await field.getType();
-    // 检查是否是文件类型
-    if (getFieldType !== FieldType.Attachment) {
-      bitable.ui.showToast({
-        toastType: ToastType.error,
-        message: "NOt A File",
-      });
-      return;
-    }
-
-    const cell = await field.getCell(recordId);
-    const value = await cell.getValue();
-    const fileName = value[0]?.name;
-    if (!fileName) return;
-
-    // 如果没有上传则上传
-    if (await fileStore.checkOne(fileName)) return;
-
-    await fileStore.uploadOne({ baseId, tableId, recordId, fieldId, viewId });
-
-    postBotMsg({ imgURL: fileStore.blobURLOf(fileName) });
-  };
-
-  const batchCheckAndUpload = async ({
-    baseId,
-    tableId,
-    fieldId,
-    viewId,
-  }: SelectionType) => {
-    console.log("🚧批量程序，启动！");
-
-    const table = await bitable.base.getTable(tableId);
-    const field = await table.getField(fieldId);
-
-    const getFieldType = await field.getType();
-    // 检查是否是文件类型
-    if (getFieldType !== FieldType.Attachment) {
-      bitable.ui.showToast({
-        toastType: ToastType.error,
-        message: "NOt A File",
-      });
-      return;
-    }
-
-    const recordList = await table.getRecordList();
-    console.log("recordList:", recordList);
-    let i = 1;
-    for (const record of recordList) {
-      const cell = await record.getCellByField(fieldId);
-      const value = await cell.getValue();
-      if (!value?.length) continue;
-      const fileName = value?.[0]?.name;
-      console.log(record.id, fieldId, "--fileName:", fileName);
-      if (!fileName) return;
-      // 如果没有上传则上传
-      if (!(await fileStore.checkOne(fileName))) {
-        await fileStore.uploadOne({
-          baseId,
-          tableId,
-          recordId: record.id,
-          fieldId,
-          viewId,
-        });
-        postBotMsg({ imgURL: fileStore.blobURLOf(fileName) });
-
-        await sleep(1);
-      }
+    for await (const imgURL of fileStore.uploadList(meta)) {
+      await messageStore.sendCard(
+        "✅失效图片重新上传成功",
+        `**存储地址：** [${imgURL}](${imgURL})`
+      );
+      await sleep(1);
     }
 
     console.log("✅跑完了！");
@@ -152,7 +55,7 @@ export default function App() {
         <Input
           placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
           size="large"
-          onChange={(value) => setWebHookUrl(value)}
+          onChange={setWebHookUrl}
         />
       </div>
 
@@ -163,7 +66,7 @@ export default function App() {
         <Input
           placeholder="Authorization"
           size="large"
-          onChange={(value) => setBaseToken(value)}
+          onChange={setBaseToken}
         />
       </div>
 
@@ -174,12 +77,7 @@ export default function App() {
         <TabPane tab="批量检查" itemKey="2" style={{ margin: "20px 0" }}>
           <Form
             labelPosition="top"
-            onSubmit={() =>
-              selectionInfo &&
-              (isBatch
-                ? batchCheckAndUpload(selectionInfo)
-                : checkAndUpload(selectionInfo))
-            }
+            onSubmit={() => selectionInfo && batchCheckAndUpload(selectionInfo)}
             getFormApi={(baseFormApi: BaseFormApi) =>
               (formApi.current = baseFormApi)
             }
@@ -188,10 +86,7 @@ export default function App() {
               <Typography.Title heading={6} style={{ margin: 8 }}>
                 {isBatch ? "批量处理" : "单个处理"}
               </Typography.Title>
-              <Switch
-                checked={isBatch}
-                onChange={(value) => setIsBatch(value)}
-              />
+              <Switch checked={isBatch} onChange={setIsBatch} />
             </div>
 
             {selectionInfo?.fieldId && selectionInfo?.recordId && (

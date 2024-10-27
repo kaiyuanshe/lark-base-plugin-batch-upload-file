@@ -2,7 +2,7 @@ import { bitable, ToastType } from "@lark-base-open/js-sdk";
 import { HTTPError } from "koajax";
 import { createRoot } from "react-dom/client";
 
-import App from "./App";
+import { App } from "./App";
 import "./App.css";
 import LoadApp from "./components/LoadApp";
 // import './locales/i18n' // 支持国际化
