@@ -1,169 +1,79 @@
-import './App.css';
-import { bitable, FieldType, ToastType } from "@lark-base-open/js-sdk";
-import { Button, Switch, Form, Typography, Tabs, TabPane, Input } from '@douyinfe/semi-ui';
-import { BaseFormApi } from '@douyinfe/semi-foundation/lib/es/form/interface';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { BaseFormApi } from "@douyinfe/semi-foundation/lib/es/form/interface";
+import {
+  Button,
+  Form,
+  Input,
+  Switch,
+  TabPane,
+  Tabs,
+  Typography,
+} from "@douyinfe/semi-ui";
+import { bitable } from "@lark-base-open/js-sdk";
+import { observer } from "mobx-react";
+import { useEffect, useRef, useState } from "react";
+import { sleep } from "web-utility";
 
-export type SelectionType = Record<"baseId" | "fieldId" | "recordId" | "tableId" | "viewId", string>
+import "./App.css";
+import fileStore, { SelectionType } from "./models/File";
+import messageStore from "./models/Message";
 
-const wait = (seconds: number) => {
-  return new Promise<void>((resolve) => {
-    setTimeout(() => {
-      resolve();
-    }, seconds * 1000);
-  });
-}
-
-export default function App() {
+export const App = observer(() => {
   const [selectionInfo, setSectionInfo] = useState<SelectionType>();
-  const [webHookUrl, setWebHookUrl] = useState<String>(localStorage.webHookUrl);
-  const [baseToken, setBaseToken] = useState<String>(localStorage.baseToken);
+  const [webHookUrl, setWebHookUrl] = useState<string>(localStorage.webHookUrl);
+  const [baseToken, setBaseToken] = useState<string>(localStorage.baseToken);
   const [isBatch, setIsBatch] = useState(false);
   const formApi = useRef<BaseFormApi>();
+  const loading =
+    fileStore.downloading > 0 ||
+    fileStore.uploading > 0 ||
+    messageStore.uploading > 0;
 
   useEffect(() => {
     const offSelectionChange = bitable.base.onSelectionChange(({ data }) =>
       setSectionInfo(() => data as SelectionType)
-    )
+    );
+    return offSelectionChange;
+  });
 
-    return offSelectionChange
-  })
-
-  const checkIsFileUploaded = useCallback(async (fileName: string) => {
-    try {
-      const response = await fetch(`https://ows.blob.core.chinacloudapi.cn/$web/file/${fileName}`);
-      if (!response.ok) {
-        throw new Error(`Response status: ${response.status}`);
-      }
-      return true;
-    } catch (error: any) {
-      bitable.ui.showToast({
-        toastType: ToastType.error,
-        message: error.message
-      })
-      return false;
-    }
-  }, []);
-
-
-  const uploadFile = ({ baseId, tableId, recordId }: SelectionType) =>
-    fetch(`https://service.kaiyuanshe.cn/crawler/task/lark/base/${baseId}/${tableId}/${recordId}/file`, {
-      method: "POST", headers: {
-        accept: "application/json",
-        Authorization: `Bearer ${baseToken}`,
-      }
-    });
-
-  const postBotMsg = async ({ imgURL }: Record<"imgURL", string>) => {
+  const batchCheckAndUpload = async (meta: SelectionType) => {
     if (!webHookUrl) return;
 
-    await fetch(webHookUrl as any as URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        "msg_type": "interactive",
-        "card": {
-          "elements": [
-            {
-              "tag": "div",
-              "text": {
-                "content": `**存储地址：** [${imgURL}](${imgURL})`,
-                "tag": "lark_md"
-              }
-            },
-          ],
-          "header": {
-            "template": "green",
-            "title": {
-              "content": "✅失效图片重新上传成功",
-              "tag": "plain_text"
-            }
-          }
-        }
-      }),
-    })
-  }
+    messageStore.client.baseURI = webHookUrl;
 
-  const checkAndUpload = async ({ baseId, tableId, recordId, fieldId, viewId }: SelectionType) => {
-    const table = await bitable.base.getTable(tableId);
-    const field = await table.getField(fieldId);
-
-    const getFieldType = await field.getType();
-    // 检查是否是文件类型
-    if (getFieldType !== FieldType.Attachment) {
-      bitable.ui.showToast({
-        toastType: ToastType.error,
-        message: "NOt A File"
-      })
-      return;
+    for await (const imgURL of fileStore.uploadList(meta)) {
+      await messageStore.sendCard(
+        "✅失效图片重新上传成功",
+        `**存储地址：** [${imgURL}](${imgURL})`
+      );
+      await sleep(1);
     }
 
-    const cell = await field.getCell(recordId);
-    const value = await cell.getValue();
-    const fileName = value[0]?.name;
-    if (!fileName) return;
-
-    // 如果没有上传则上传
-    if (!await checkIsFileUploaded(fileName)) {
-      await uploadFile({ baseId, tableId, recordId, fieldId, viewId });
-      postBotMsg({ imgURL: `https://ows.blob.core.chinacloudapi.cn/$web/file/${fileName}` })
-    }
-  }
-
-  const batchCheckAndUpload = async ({ baseId, tableId, recordId, fieldId, viewId }: SelectionType) => {
-    console.log("🚧批量程序，启动！")
-
-    const table = await bitable.base.getTable(tableId);
-    const field = await table.getField(fieldId);
-
-    const getFieldType = await field.getType();
-    // 检查是否是文件类型
-    if (getFieldType !== FieldType.Attachment) {
-      bitable.ui.showToast({
-        toastType: ToastType.error,
-        message: "NOt A File"
-      })
-      return;
-    }
-
-    const recordList = await table.getRecordList();
-    console.log("recordList:", recordList)
-    let i = 1;
-    for (const record of recordList) {
-      const cell = await record.getCellByField(fieldId);
-      const value = await cell.getValue();
-      if (!value?.length) continue;
-      const fileName = value?.[0]?.name;
-      console.log(record.id, fieldId, "--fileName:", fileName)
-      if (!fileName) return;
-      // 如果没有上传则上传
-      if (!await checkIsFileUploaded(fileName)) {
-        await uploadFile({ baseId, tableId, recordId: record.id, fieldId, viewId });
-        postBotMsg({ imgURL: `https://ows.blob.core.chinacloudapi.cn/$web/file/${fileName}` })
-
-        await wait(1);
-      }
-    }
-
-    console.log("✅跑完了！")
-  }
+    console.log("✅跑完了！");
+  };
 
   return (
     <main className="main">
-      <div style={{ display: 'flex', flexDirection: "column" }}>
+      <div style={{ display: "flex", flexDirection: "column" }}>
         <Typography.Title heading={6} style={{ margin: 8 }}>
-          Bot webhook
+          Web hook URL of Lark chat bot
         </Typography.Title>
-        <Input placeholder='https://open.feishu.cn/open-apis/bot/v2/hook/...' size='large' onChange={(value) => setWebHookUrl(value)} />
+        <Input
+          type="url"
+          size="large"
+          placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
+          onChange={setWebHookUrl}
+        />
       </div>
 
-      <div style={{ display: 'flex', flexDirection: "column" }}>
+      <div style={{ display: "flex", flexDirection: "column" }}>
         <Typography.Title heading={6} style={{ margin: 8 }}>
-          Lark Base Token
+          Web hook token of KaiYuanShe service
         </Typography.Title>
-        <Input placeholder='Authorization' size='large' onChange={(value) => setBaseToken(value)} />
+        <Input
+          placeholder="Authorization"
+          size="large"
+          onChange={setBaseToken}
+        />
       </div>
 
       <Tabs type="card" style={{ margin: "20px 0" }}>
@@ -171,16 +81,21 @@ export default function App() {
           文档
         </TabPane>
         <TabPane tab="批量检查" itemKey="2" style={{ margin: "20px 0" }}>
-          <Form labelPosition='top' onSubmit={() => selectionInfo && (isBatch ? batchCheckAndUpload(selectionInfo) : checkAndUpload(selectionInfo))} getFormApi={(baseFormApi: BaseFormApi) => formApi.current = baseFormApi}>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
+          <Form
+            labelPosition="top"
+            onSubmit={() => selectionInfo && batchCheckAndUpload(selectionInfo)}
+            getFormApi={(baseFormApi: BaseFormApi) =>
+              (formApi.current = baseFormApi)
+            }
+          >
+            <div style={{ display: "flex", alignItems: "center" }}>
               <Typography.Title heading={6} style={{ margin: 8 }}>
-                {isBatch ? '批量处理' : '单个处理'}
+                {isBatch ? "批量处理" : "单个处理"}
               </Typography.Title>
-              <Switch checked={isBatch} onChange={(value) => setIsBatch(value)} />
+              <Switch checked={isBatch} onChange={setIsBatch} />
             </div>
 
-
-            {selectionInfo?.fieldId && selectionInfo?.recordId &&
+            {selectionInfo?.fieldId && selectionInfo?.recordId && (
               <Form.Slot label="选中单元格信息">
                 <ul>
                   <li>baseId: {selectionInfo.baseId}</li>
@@ -190,9 +105,20 @@ export default function App() {
                   <li>viewId: {selectionInfo.viewId}</li>
                 </ul>
               </Form.Slot>
-            }
+            )}
 
-            <Button disabled={!selectionInfo?.fieldId || !selectionInfo?.recordId || !baseToken} theme='solid' htmlType='submit'>{isBatch ? "批量" : "单个"}检测</Button>
+            <Button
+              disabled={
+                loading ||
+                !selectionInfo?.fieldId ||
+                !selectionInfo?.recordId ||
+                !baseToken
+              }
+              theme="solid"
+              htmlType="submit"
+            >
+              {isBatch ? "批量" : "单个"}检测
+            </Button>
           </Form>
         </TabPane>
         <TabPane tab="帮助" itemKey="3">
@@ -200,5 +126,5 @@ export default function App() {
         </TabPane>
       </Tabs>
     </main>
-  )
-}
+  );
+});

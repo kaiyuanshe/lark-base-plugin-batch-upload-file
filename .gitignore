@@ -4,11 +4,14 @@
 /node_modules
 /.pnp
 .pnp.js
+package-lock.json
+yarn.lock
 
 # testing
 /coverage
 
 # production
+.parcel-cache/
 /build
 /dist
 

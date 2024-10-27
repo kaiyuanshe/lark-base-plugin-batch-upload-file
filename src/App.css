@@ -1,4 +1,4 @@
-@import 'reset-css';
+@import '../node_modules/reset-css/reset.css';
 
 .main {
   padding: 1.5rem 1rem 1rem;
